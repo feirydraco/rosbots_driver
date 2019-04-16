@@ -47,7 +47,8 @@ class Supervisor:
         self.controllers = {"rc": RCTeleop(),
                             "gtg": GoToGoal(self.robot),
                             "stop": Stop()}
-        self.switch_to_state("gtg")
+        # Intialize to rc-state for Remote-Control
+        self.switch_to_state("rc")
         
         self.dd = DifferentialDrive(self.robot.wheelbase,
                                     self.robot.wheel_radius)
