@@ -64,7 +64,7 @@ class Robot:
         self.cur_wheel_power_left = Float32()
         self.cur_wheel_power_right.data = 0.0
         self.cur_wheel_power_left.data = 0.0
-        
+
         self.pub_power_right = \
             rospy.Publisher('/wheel_power_right', Float32, queue_size=10)
         self.pub_power_left = \
@@ -87,6 +87,11 @@ class Robot:
         self._prev_wheel_ticks = {"r" : None, "l" : None, "ts": None}
         self._wheel_velocity = {"r": 0.0, "l": 0.0}
 
+        #Subscribe to distance module:
+        self.distance_lock = allocate_lock()
+        self.sub_distance = rospy.Subscriber("/distance", Float32, self.distance_cb)
+        self.cur_distance = None
+
         # Current robot pose
         self.pose2D = Pose2D(0.0, 0.0, 0.0)
 
@@ -94,7 +99,7 @@ class Robot:
         # K are the gains.
         self.PID = {"l": PID(1.0, 0.1, 0.2),
                     "r": PID(1.0, 0.1, 0.2)}
-        
+
     def shutdown(self):
         rospy.loginfo(rospy.get_caller_id() + " Robot shutdown")
 
@@ -113,7 +118,7 @@ class Robot:
         self.pose2D.x = pose2D.x
         self.pose2D.y = pose2D.y
         self.pose2D.theta = pose2D.theta
-        
+
     def get_wheel_ticks(self):
         ticks = {}
         self.wheel_ticks_right_lock.acquire()
@@ -146,9 +151,13 @@ class Robot:
             self._cur_wheel_ticks_ts = rospy.Time.now()
             self._cur_wheel_ticks_left = ticks.data
             self.wheel_ticks_left_lock.release()
-        
-            
-            
+
+    def distance_cb(self, distance):
+        self.distance_lock.acquire()
+        self.cur_distance = distance.data
+        self.distance_lock.release()
+
+
     def velocity_to_power(self, v):
         # Clamp the velocity again to max fwd and back
         v = max(min(v, self.wheel_speed_max), self.wheel_speed_max * -1.0)
@@ -166,7 +175,7 @@ class Robot:
             a_pow = self.wheel_speed_mid_power
             b = self.wheel_speed_max
             b_pow = self.wheel_speed_max_power
-        
+
         # Linearly interpolate a and b
         nnn = ((av - a)/(b - a))
         wheel_power = ((nnn * (b_pow - a_pow)) + a_pow)
@@ -194,7 +203,7 @@ class Robot:
         vl = max(min(vl, self.wheel_speed_max), self.wheel_speed_max * -1.0)
 
         cur_ticks = self.get_wheel_ticks()
-        
+
         # Special stop case
         if vr == 0.0 and vl == 0.0:
             for ddd in ["l", "r"]:
@@ -207,7 +216,7 @@ class Robot:
             self._prev_wheel_ticks["ts"] = cur_ticks["ts"]
         else:
             # What direction do we want to go in?
-            v_dir = {"l": 1.0, "r": 1.0} 
+            v_dir = {"l": 1.0, "r": 1.0}
             for ddd in ["l", "r"]:
                 if (vl < 0.0 and ddd == "l") or \
                    (vr < 0.0 and ddd == "r"):
@@ -223,7 +232,7 @@ class Robot:
 
             # Get actual direction motors are turning in
             motor_dir = self.get_wheel_dir()
-            
+
             # Compute velocity of wheels
             if self._prev_wheel_ticks["r"] != None and \
                self._prev_wheel_ticks["l"] != None and \
@@ -265,7 +274,7 @@ class Robot:
                               str(self._wheel_velocity[ddd]) +  ", " +
                               str(e_pow[ddd]) +  ", " +
                               str(e_wheel_pow_final[ddd]))
-        
+
             # Add to current power settings and then clamp to -1 and 1
             # TTD: Only clamp to forward rotation for now!
             self.cur_wheel_power_right.data = \
@@ -274,7 +283,7 @@ class Robot:
             self.cur_wheel_power_left.data =  \
                 max(min(self.cur_wheel_power_left.data +
                         e_wheel_pow_final["l"],1.0),0.0) #-1.0)
-        
+
         # Publish out
         if self.cur_wheel_power_right.data != 0.0 or \
            self.cur_wheel_power_left.data != 0.0:
@@ -290,5 +299,3 @@ class Robot:
                           str(self.cur_wheel_power_right))
         self.pub_power_right.publish(self.cur_wheel_power_right)
         self.pub_power_left.publish(self.cur_wheel_power_left)
-
-        
